@@ -143,7 +143,7 @@ async def run_ddos(args, global_timer):
             )
             threads = max_conns
 
-    logger.info(f"{cl.GREEN}{t('Launching the attack ...')}{cl.RESET}")
+    logger.info(f"{cl.GREEN}{t('Launching the attack...')}{cl.RESET}")
 
     attack_settings = AttackSettings(
         requests_per_connection=args.rpc,
@@ -297,7 +297,7 @@ async def run_ddos(args, global_timer):
         it, cycle_start = 0, time.perf_counter()
         refresh_rate = REFRESH_RATE
 
-        print_status(threads, len(proxies), len(stats), use_my_ip, False)
+        print_status(threads, use_my_ip, False)
         while True:
             await asyncio.sleep(refresh_rate)
             show_statistic(stats, debug)
@@ -307,7 +307,7 @@ async def run_ddos(args, global_timer):
                 passed = time.perf_counter() - cycle_start
                 overtime = bool(passed > refresh_rate * REFRESH_OVERTIME)
                 print_banner(args)
-                print_status(threads, len(proxies), len(stats), use_my_ip, overtime)
+                print_status(threads, use_my_ip, overtime)
 
             it, cycle_start = it + 1, time.perf_counter()
 
