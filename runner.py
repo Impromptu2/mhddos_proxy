@@ -4,25 +4,25 @@ except:raise
 # @formatter:on
 import asyncio
 import multiprocessing as mp
+import os
 import random
 import signal
 import sys
-import os
 import time
 from functools import partial
 from typing import List, Optional, Set, Tuple, Union
 
 from src.cli import init_argparse
 from src.core import (
-    CPU_COUNT, CPU_PER_PROCESS, DEFAULT_THREADS, FAILURE_BUDGET_FACTOR, FAILURE_DELAY_SECONDS,
-    IT_ARMY_CONFIG_URL, ONLY_MY_IP, REFRESH_OVERTIME, REFRESH_RATE,
-    SCHEDULER_MAX_INIT_FRACTION, SCHEDULER_MIN_INIT_FRACTION, cl, logger, setup_worker_logger
+    cl, COPIES_AUTO, CPU_COUNT, CPU_PER_COPY, DEFAULT_THREADS, FAILURE_BUDGET_FACTOR, FAILURE_DELAY_SECONDS,
+    IT_ARMY_CONFIG_URL, logger, MAX_COPIES_AUTO, ONLY_MY_IP, REFRESH_OVERTIME, REFRESH_RATE,
+    SCHEDULER_MAX_INIT_FRACTION, SCHEDULER_MIN_INIT_FRACTION, setup_worker_logger,
 )
 from src.i18n import DEFAULT_LANGUAGE, set_language, translate as t
 from src.mhddos import AsyncTcpFlood, AsyncUdpFlood, AttackSettings, main as mhddos_main
 from src.output import print_banner, print_status, show_statistic
 from src.proxies import ProxySet
-from src.system import WINDOWS_WAKEUP_SECONDS, fix_ulimits, is_latest_version, setup_event_loop
+from src.system import fix_ulimits, is_latest_version, setup_event_loop, WINDOWS_WAKEUP_SECONDS
 from src.targets import Target, TargetsLoader
 from src.timer import Timer
 from src.timer import global_timer
@@ -72,7 +72,8 @@ class GeminoCurseTaskSet:
         return len(self._pending)
 
     def _launch(self, runnable) -> None:
-        if self._shutdown_event.is_set(): return
+        if self._shutdown_event.is_set():
+            return
         on_connect = self._loop.create_future()
         on_connect.add_done_callback(partial(self._on_connect, runnable))
         task = self._loop.create_task(runnable.run(on_connect))
@@ -141,7 +142,7 @@ async def run_ddos(args, global_timer):
             )
             threads = max_conns
 
-    logger.info(f"{cl.GREEN}{t('Launching the attack ...')}{cl.RESET}")
+    logger.info(f"{cl.GREEN}{t('Launching the attack...')}{cl.RESET}")
 
     attack_settings = AttackSettings(
         requests_per_connection=args.rpc,
@@ -295,7 +296,7 @@ async def run_ddos(args, global_timer):
         it, cycle_start = 0, time.perf_counter()
         refresh_rate = REFRESH_RATE
 
-        print_status(threads, len(proxies), len(stats), use_my_ip, False)
+        print_status(threads, use_my_ip, False)
         while True:
             await asyncio.sleep(refresh_rate)
             show_statistic(stats, debug)
@@ -305,7 +306,7 @@ async def run_ddos(args, global_timer):
                 passed = time.perf_counter() - cycle_start
                 overtime = bool(passed > refresh_rate * REFRESH_OVERTIME)
                 print_banner(args)
-                print_status(threads, len(proxies), len(stats), use_my_ip, overtime)
+                print_status(threads, use_my_ip, overtime)
 
             it, cycle_start = it + 1, time.perf_counter()
 
@@ -403,14 +404,16 @@ def main():
         logger.error(f"{cl.RED}{t('No targets specified for the attack')}{cl.RESET}")
         sys.exit()
 
+    max_copies = max(1, CPU_COUNT // CPU_PER_COPY)
     num_copies = args.copies
-    if num_copies > 1:
-        max_copies = CPU_COUNT // CPU_PER_PROCESS
-        if num_copies > max_copies:
-            num_copies = max_copies
-            logger.warning(
-                f"{cl.RED}{t('The number of copies is automatically reduced to')} {max_copies}{cl.RESET}"
-            )
+    if args.copies == COPIES_AUTO:
+        num_copies = min(max_copies, MAX_COPIES_AUTO)
+
+    if num_copies > max_copies:
+        num_copies = max_copies
+        logger.warning(
+            f"{cl.RED}{t('The number of copies is automatically reduced to')} {max_copies}{cl.RESET}"
+        )
 
     print_banner(args)
 
