@@ -24,6 +24,8 @@ from src.output import print_banner, print_status, show_statistic
 from src.proxies import ProxySet
 from src.system import WINDOWS_WAKEUP_SECONDS, fix_ulimits, is_latest_version, setup_event_loop
 from src.targets import Target, TargetsLoader
+from src.timer import Timer
+from src.timer import global_timer
 
 
 class GeminoCurseTaskSet:
@@ -113,7 +115,7 @@ async def run_udp_flood(runnable: AsyncUdpFlood) -> None:
                 num_failures = 0
 
 
-async def run_ddos(args):
+async def run_ddos(args, global_timer):
     is_old_version = not await is_latest_version()
     if is_old_version:
         logger.warning(
@@ -333,6 +335,25 @@ async def run_ddos(args):
     # setup coroutine to reload targets
     tasks.append(loop.create_task(reload_targets()))
 
+    async def check_time_to_live(global_timer):
+        while True:
+            try:
+                await asyncio.sleep(reload_after)
+                if (global_timer.check_timer()):
+                    raise KeyboardInterrupt
+                else:
+                    logger.warning(
+                        f"{cl.MAGENTA}{t('Seconds before program shut down: ')}{global_timer.time_left()}{cl.RESET}"
+                    )
+            except KeyboardInterrupt:
+                raise KeyboardInterrupt
+            except Exception as exc:
+                logger.warning(f"{cl.MAGENTA}{t('Timer failed:')} {exc}{cl.RESET}")
+
+    # setup coroutine to check time
+    if args.timer > -1:
+        tasks.append(loop.create_task(check_time_to_live(global_timer)))
+
     async def reload_proxies():
         while True:
             try:
@@ -362,12 +383,12 @@ def _main_signal_handler(ps, *args):
     sys.exit()
 
 
-def _worker_process(args, lang: str, process_index: Optional[Tuple[int, int]]):
+def _worker_process(args, lang: str, global_timer: Timer, process_index: Optional[Tuple[int, int]]):
     try:
         set_language(lang)  # set language again for the subprocess
         setup_worker_logger(process_index)
         loop = setup_event_loop()
-        loop.run_until_complete(run_ddos(args))
+        loop.run_until_complete(run_ddos(args, global_timer))
     except KeyboardInterrupt:
         sys.exit()
 
@@ -412,11 +433,20 @@ def main():
         )
         print()
 
+    if args.timer > -1:
+        logger.warning(
+            f"{cl.CYAN}{t('Program will shut down automatically after ')}{args.timer}{t('s')}{cl.RESET}"
+        )
+
+    if args.timer > -1:
+        global_timer.set_time_to_live(args.timer)
+        global_timer.set_starting_time()
+
     processes = []
     mp.set_start_method("spawn")
     for ind in range(num_copies):
         pos = (ind+1, num_copies) if num_copies > 1 else None
-        p = mp.Process(target=_worker_process, args=(args, lang, pos), daemon=True)
+        p = mp.Process(target=_worker_process, args=(args, lang, global_timer, pos), daemon=True)
         processes.append(p)
 
     signal.signal(signal.SIGINT, partial(_main_signal_handler, processes, logger))
